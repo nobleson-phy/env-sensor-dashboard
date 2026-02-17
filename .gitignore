@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+sensor_data.db
+.env
+venv/
+*.egg-info/

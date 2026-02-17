@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Environment Sensor Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Environment Sensor Dashboard</h1>
+        <div id="status">
+            <span id="status-dot" class="dot offline"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </header>
+
+    <main>
+        <section id="cards" class="card-grid">
+            <div class="card" id="card-temperature" data-metric="temperature">
+                <div class="card-label">Temperature</div>
+                <div class="card-value"><span id="val-temperature">--</span></div>
+                <div class="card-unit">&deg;C</div>
+            </div>
+            <div class="card" id="card-humidity" data-metric="humidity">
+                <div class="card-label">Humidity</div>
+                <div class="card-value"><span id="val-humidity">--</span></div>
+                <div class="card-unit">%</div>
+            </div>
+            <div class="card" id="card-pressure" data-metric="pressure">
+                <div class="card-label">Pressure</div>
+                <div class="card-value"><span id="val-pressure">--</span></div>
+                <div class="card-unit">hPa</div>
+            </div>
+            <div class="card" id="card-light" data-metric="light">
+                <div class="card-label">Ambient Light</div>
+                <div class="card-value"><span id="val-light">--</span></div>
+                <div class="card-unit">lx</div>
+            </div>
+            <div class="card" id="card-noise" data-metric="noise">
+                <div class="card-label">Sound Noise</div>
+                <div class="card-value"><span id="val-noise">--</span></div>
+                <div class="card-unit">dB</div>
+            </div>
+            <div class="card" id="card-eco2" data-metric="eco2">
+                <div class="card-label">eCO2</div>
+                <div class="card-value"><span id="val-eco2">--</span></div>
+                <div class="card-unit">ppm</div>
+            </div>
+            <div class="card" id="card-etvoc" data-metric="etvoc">
+                <div class="card-label">eTVOC</div>
+                <div class="card-value"><span id="val-etvoc">--</span></div>
+                <div class="card-unit">ppb</div>
+            </div>
+            <div class="card" id="card-discomfort" data-metric="discomfort">
+                <div class="card-label">Discomfort Index</div>
+                <div class="card-value"><span id="val-discomfort">--</span></div>
+                <div class="card-unit">&nbsp;</div>
+            </div>
+            <div class="card" id="card-heat_stroke" data-metric="heat_stroke">
+                <div class="card-label">Heat Stroke Risk</div>
+                <div class="card-value"><span id="val-heat_stroke">--</span></div>
+                <div class="card-unit">&deg;C</div>
+            </div>
+        </section>
+
+        <section id="charts" class="chart-grid">
+            <div class="chart-container">
+                <h2>Temperature &amp; Humidity</h2>
+                <canvas id="chart-temp-hum"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>Air Quality (eCO2 &amp; eTVOC)</h2>
+                <canvas id="chart-air"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>Barometric Pressure</h2>
+                <canvas id="chart-pressure"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>Sound &amp; Light</h2>
+                <canvas id="chart-noise-light"></canvas>
+            </div>
+        </section>
+
+        <section id="controls">
+            <label for="history-range">History: </label>
+            <select id="history-range">
+                <option value="1">1 hour</option>
+                <option value="6">6 hours</option>
+                <option value="24" selected>24 hours</option>
+                <option value="72">3 days</option>
+                <option value="168">7 days</option>
+            </select>
+        </section>
+    </main>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
