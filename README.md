@@ -22,6 +22,7 @@ A real-time web dashboard for the [Omron 2JCIE-BU01](https://components.omron.co
 - **Historical charts** using Chart.js — temperature & humidity, air quality, pressure, sound & light
 - **Selectable time range** — 1 hour to 7 days
 - **Auto-pruning** SQLite storage — keeps 7 days of data
+- **Auto-recovery** from sensor firmware freezes via USB reset
 - **Mock mode** for development without the physical sensor
 - **Dark theme** responsive layout
 
@@ -73,6 +74,10 @@ Open `http://<pi-ip>:5000` in a browser.
 | `GET /` | Dashboard page |
 | `GET /api/latest` | Latest sensor reading as JSON |
 | `GET /api/history?hours=24` | Historical readings (1–168 hours) |
+
+## Sensor Auto-Recovery
+
+The 2JCIE-BU01 firmware can occasionally freeze, returning identical readings. The dashboard detects this after 10 consecutive identical reads (~30s) and automatically power-cycles the sensor via USB unbind/rebind — no physical intervention required. Requires running as root. See [HOWTO.md](HOWTO.md) for details.
 
 ## Documentation
 
