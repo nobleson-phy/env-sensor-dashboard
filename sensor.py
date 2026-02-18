@@ -6,12 +6,18 @@ Setup:
     sudo sh -c 'echo 0590 00d4 > /sys/bus/usb-serial/drivers/ftdi_sio/new_id'
 """
 
+import glob
+import os
 import struct
 import time
 import random
 import logging
 
 logger = logging.getLogger(__name__)
+
+USB_VID = '0590'
+USB_PID = '00d4'
+STALE_THRESHOLD = 10  # consecutive identical reads before USB reset
 
 
 def _calc_crc(data):
@@ -92,6 +98,48 @@ def _parse_response(data):
     }
 
 
+def _find_usb_device_path():
+    """Find the sysfs path for the Omron sensor (e.g. '1-1.1')."""
+    for devdir in glob.glob('/sys/bus/usb/devices/*/'):
+        try:
+            vid = open(os.path.join(devdir, 'idVendor')).read().strip()
+            pid = open(os.path.join(devdir, 'idProduct')).read().strip()
+            if vid == USB_VID and pid == USB_PID:
+                return os.path.basename(devdir.rstrip('/'))
+        except OSError:
+            pass
+    return None
+
+
+def _usb_reset():
+    """Power-cycle the sensor by unbinding and rebinding its USB port."""
+    devpath = _find_usb_device_path()
+    if not devpath:
+        logger.error("Cannot find sensor USB device for reset")
+        return False
+
+    logger.warning("Resetting USB device %s", devpath)
+    try:
+        with open('/sys/bus/usb/drivers/usb/unbind', 'w') as f:
+            f.write(devpath)
+        time.sleep(3)
+        with open('/sys/bus/usb/drivers/usb/bind', 'w') as f:
+            f.write(devpath)
+        time.sleep(2)
+        # Re-register ftdi_sio for the device
+        try:
+            with open('/sys/bus/usb-serial/drivers/ftdi_sio/new_id', 'w') as f:
+                f.write(f'{USB_VID} {USB_PID}')
+        except OSError:
+            pass  # already registered
+        time.sleep(1)
+        logger.info("USB reset complete")
+        return True
+    except Exception:
+        logger.exception("USB reset failed")
+        return False
+
+
 class Sensor:
     """Interface to the Omron 2JCIE-BU01 USB sensor via serial."""
 
@@ -99,12 +147,19 @@ class Sensor:
         self.port = port
         self.mock = mock
         self._serial = None
+        self._last_reading = None
+        self._stale_count = 0
 
     def open(self):
         if self.mock:
             logger.info("Sensor running in mock mode")
             return
+        self._open_serial()
+
+    def _open_serial(self):
         import serial
+        if self._serial and self._serial.is_open:
+            self._serial.close()
         self._serial = serial.Serial(
             port=self.port,
             baudrate=115200,
@@ -124,6 +179,26 @@ class Sensor:
             return self._mock_read()
         return self._real_read()
 
+    def _check_stale(self, reading):
+        """Detect frozen sensor and auto-reset USB if needed."""
+        if self._last_reading == reading:
+            self._stale_count += 1
+            if self._stale_count >= STALE_THRESHOLD:
+                logger.warning("Sensor stale (%d identical reads), resetting USB", self._stale_count)
+                self.close()
+                if _usb_reset():
+                    try:
+                        self._open_serial()
+                    except Exception:
+                        logger.exception("Failed to reopen serial after USB reset")
+                self._stale_count = 0
+                self._last_reading = None
+                return None
+        else:
+            self._stale_count = 0
+            self._last_reading = reading
+        return reading
+
     def _real_read(self):
         try:
             self._serial.reset_input_buffer()
@@ -141,7 +216,8 @@ class Sensor:
                 logger.warning("Short response: %d bytes", len(data))
                 return None
 
-            return _parse_response(data)
+            reading = _parse_response(data)
+            return self._check_stale(reading)
         except Exception:
             logger.exception("Error reading sensor")
             return None
