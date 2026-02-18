@@ -166,6 +166,19 @@ View logs:
 sudo journalctl -u sensor-dashboard -f
 ```
 
+## Sensor Stale Detection and Auto-Recovery
+
+The 2JCIE-BU01 firmware can occasionally freeze, causing it to return identical readings indefinitely while the USB connection remains active. The dashboard detects and recovers from this automatically:
+
+1. The sensor module tracks consecutive identical readings
+2. After **10 identical reads** (~30 seconds), it triggers an automatic recovery
+3. Recovery unbinds and rebinds the USB device (power-cycling the sensor), re-registers the `ftdi_sio` driver, and reopens the serial port
+4. A warning is logged: `Sensor stale (10 identical reads), resetting USB`
+
+This requires the app to run as **root** (or with write access to `/sys/bus/usb/drivers/usb/unbind` and `bind`) so it can perform the USB reset. If running as a systemd service with `User=root`, this works out of the box.
+
+If auto-recovery fails (e.g. insufficient permissions), a physical unplug/replug of the sensor will always resolve the issue.
+
 ## Troubleshooting
 
 ### `/dev/ttyUSB0` does not appear
