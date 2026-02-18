@@ -3,6 +3,7 @@
 import sqlite3
 import os
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,10 @@ def insert_reading(data):
     with _connect() as conn:
         conn.execute(
             '''INSERT INTO readings
-               (temperature, humidity, light, pressure, noise, etvoc, eco2, discomfort, heat_stroke)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+               (timestamp, temperature, humidity, light, pressure, noise, etvoc, eco2, discomfort, heat_stroke)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 data['temperature'], data['humidity'], data['light'],
                 data['pressure'], data['noise'], data['etvoc'],
                 data['eco2'], data['discomfort'], data['heat_stroke'],
@@ -56,7 +58,7 @@ def insert_reading(data):
         )
         # Auto-prune old data
         conn.execute(
-            "DELETE FROM readings WHERE timestamp < datetime('now', ?)",
+            "DELETE FROM readings WHERE timestamp < datetime('now', 'localtime', ?)",
             (f'-{PRUNE_DAYS} days',)
         )
 
@@ -76,7 +78,7 @@ def get_history(hours=24):
     """Return readings from the last N hours as a list of dicts."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM readings WHERE timestamp >= datetime('now', ?) ORDER BY timestamp ASC",
+            "SELECT * FROM readings WHERE timestamp >= datetime('now', 'localtime', ?) ORDER BY timestamp ASC",
             (f'-{hours} hours',)
         ).fetchall()
     return [dict(r) for r in rows]
