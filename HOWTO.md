@@ -7,6 +7,7 @@ How to install and run the web dashboard on a Raspberry Pi.
 - Raspberry Pi (tested on Pi 4) running Raspberry Pi OS
 - Omron 2JCIE-BU01 USB environmental sensor
 - Python 3.7+
+- `uhubctl` for automatic sensor recovery (install: `sudo apt install uhubctl`)
 - Network access to the Pi (for viewing the dashboard)
 
 ## 1. USB Driver Setup
@@ -172,12 +173,28 @@ The 2JCIE-BU01 firmware can occasionally freeze, causing it to return identical 
 
 1. The sensor module tracks consecutive identical readings
 2. After **10 identical reads** (~30 seconds), it triggers an automatic recovery
-3. Recovery unbinds and rebinds the USB device (power-cycling the sensor), re-registers the `ftdi_sio` driver, and reopens the serial port
+3. Recovery uses `uhubctl` to cut USB port power for 3 seconds (equivalent to physically unplugging the sensor), then restores power, re-registers the `ftdi_sio` driver, and waits for `/dev/ttyUSB*` to reappear
 4. A warning is logged: `Sensor stale (10 identical reads), resetting USB`
 
-This requires the app to run as **root** (or with write access to `/sys/bus/usb/drivers/usb/unbind` and `bind`) so it can perform the USB reset. If running as a systemd service with `User=root`, this works out of the box.
+### Why uhubctl?
 
-If auto-recovery fails (e.g. insufficient permissions), a physical unplug/replug of the sensor will always resolve the issue.
+A simple USB unbind/rebind only resets the USB interface, not the sensor's internal microcontroller. The firmware stays frozen. `uhubctl` cuts electrical power to the USB port, fully resetting the sensor hardware — the same as physically unplugging and replugging the cable.
+
+### Install uhubctl
+
+```bash
+sudo apt install uhubctl
+```
+
+Verify it can see your USB hub:
+
+```bash
+sudo uhubctl
+```
+
+This requires the app to run as **root** so it can control USB power. If running as a systemd service with `User=root`, this works out of the box.
+
+If auto-recovery fails (e.g. `uhubctl` not installed or USB hub doesn't support per-port power switching), a physical unplug/replug of the sensor will always resolve the issue.
 
 ## Troubleshooting
 

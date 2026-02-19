@@ -77,7 +77,7 @@ Open `http://<pi-ip>:5000` in a browser.
 
 ## Sensor Auto-Recovery
 
-The 2JCIE-BU01 firmware can occasionally freeze, returning identical readings. The dashboard detects this after 10 consecutive identical reads (~30s) and automatically power-cycles the sensor via USB unbind/rebind — no physical intervention required. Requires running as root. See [HOWTO.md](HOWTO.md) for details.
+The 2JCIE-BU01 firmware can occasionally freeze, returning identical readings. The dashboard detects this after 10 consecutive identical reads (~30s) and uses [`uhubctl`](https://github.com/mvp/uhubctl) to cut USB port power — fully resetting the sensor hardware, equivalent to a physical unplug/replug. Requires `sudo apt install uhubctl` and running as root. See [HOWTO.md](HOWTO.md) for details.
 
 ## Documentation
 
