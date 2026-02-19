@@ -22,7 +22,7 @@ A real-time web dashboard for the [Omron 2JCIE-BU01](https://components.omron.co
 - **Historical charts** using Chart.js — temperature & humidity, air quality, pressure, sound & light
 - **Selectable time range** — 1 hour to 7 days
 - **Auto-pruning** SQLite storage — keeps 7 days of data
-- **Auto-recovery** from sensor firmware freezes via USB reset
+- **Auto-recovery** from sensor firmware freezes via PCI-level USB reset
 - **Mock mode** for development without the physical sensor
 - **Dark theme** responsive layout
 
@@ -77,7 +77,7 @@ Open `http://<pi-ip>:5000` in a browser.
 
 ## Sensor Auto-Recovery
 
-The 2JCIE-BU01 firmware can occasionally freeze, returning identical readings. The dashboard detects this after 10 consecutive identical reads (~30s) and uses [`uhubctl`](https://github.com/mvp/uhubctl) to cut USB port power — fully resetting the sensor hardware, equivalent to a physical unplug/replug. Requires `sudo apt install uhubctl` and running as root. See [HOWTO.md](HOWTO.md) for details.
+The 2JCIE-BU01 firmware can occasionally freeze, returning identical readings. The dashboard detects this after 10 consecutive identical reads (~30s) and performs a PCI-level reset of the xHCI USB controller — unbinding, rescanning, and rebinding to fully power-cycle all USB ports and reset the sensor's microcontroller. This is more reliable than `uhubctl` on the Pi 4, whose VIA Labs hub doesn't actually cut VBUS. Requires running as root. See [HOWTO.md](HOWTO.md) for details.
 
 ## Documentation
 

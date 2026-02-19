@@ -7,7 +7,7 @@ How to install and run the web dashboard on a Raspberry Pi.
 - Raspberry Pi (tested on Pi 4) running Raspberry Pi OS
 - Omron 2JCIE-BU01 USB environmental sensor
 - Python 3.7+
-- `uhubctl` for automatic sensor recovery (install: `sudo apt install uhubctl`)
+- Root access for automatic sensor recovery (PCI-level USB reset)
 - Network access to the Pi (for viewing the dashboard)
 
 ## 1. USB Driver Setup
@@ -173,28 +173,39 @@ The 2JCIE-BU01 firmware can occasionally freeze, causing it to return identical 
 
 1. The sensor module tracks consecutive identical readings
 2. After **10 identical reads** (~30 seconds), it triggers an automatic recovery
-3. Recovery uses `uhubctl` to cut USB port power for 3 seconds (equivalent to physically unplugging the sensor), then restores power, re-registers the `ftdi_sio` driver, and waits for `/dev/ttyUSB*` to reappear
-4. A warning is logged: `Sensor stale (10 identical reads), resetting USB`
+3. Recovery unbinds the xHCI PCI controller, rescans the PCI bus, and rebinds — this fully power-cycles all USB ports and resets the sensor's microcontroller
+4. After rebind, it re-registers the `ftdi_sio` driver and waits for `/dev/ttyUSB*` to reappear
+5. A warning is logged: `Sensor stale (10 identical reads), resetting USB`
 
-### Why uhubctl?
+### Why PCI-level reset?
 
-A simple USB unbind/rebind only resets the USB interface, not the sensor's internal microcontroller. The firmware stays frozen. `uhubctl` cuts electrical power to the USB port, fully resetting the sensor hardware — the same as physically unplugging and replugging the cable.
+A simple USB unbind/rebind only resets the USB interface, not the sensor's internal microcontroller — the firmware stays frozen. Tools like `uhubctl` can cut USB port power on some hubs, but the Raspberry Pi 4's VIA Labs hub (VL805) does not actually cut VBUS despite reporting per-port power switching support.
 
-### Install uhubctl
-
-```bash
-sudo apt install uhubctl
-```
-
-Verify it can see your USB hub:
+The PCI unbind/rescan/rebind of the `xhci_hcd` controller fully resets the USB hardware at the controller level, which is equivalent to physically unplugging and replugging the sensor. The steps performed automatically:
 
 ```bash
-sudo uhubctl
+# 1. Unbind xHCI controller (kills all USB devices)
+echo '0000:01:00.0' > /sys/bus/pci/drivers/xhci_hcd/unbind
+sleep 3
+
+# 2. Rescan PCI bus (re-enumerates the controller)
+echo 1 > /sys/bus/pci/rescan
+sleep 3
+
+# 3. Rebind xHCI controller
+echo '0000:01:00.0' > /sys/bus/pci/drivers/xhci_hcd/bind
+sleep 5
+
+# 4. Re-register ftdi_sio driver
+sudo modprobe ftdi_sio
+echo '0590 00d4' > /sys/bus/usb-serial/drivers/ftdi_sio/new_id
 ```
 
-This requires the app to run as **root** so it can control USB power. If running as a systemd service with `User=root`, this works out of the box.
+This requires the app to run as **root** so it can write to PCI sysfs files. If running as a systemd service with `User=root`, this works out of the box.
 
-If auto-recovery fails (e.g. `uhubctl` not installed or USB hub doesn't support per-port power switching), a physical unplug/replug of the sensor will always resolve the issue.
+**Note:** This resets *all* USB ports on the Pi, not just the sensor's port. If you have other USB devices (keyboard, mouse), they will be briefly disconnected during recovery.
+
+If auto-recovery fails, a physical unplug/replug of the sensor will always resolve the issue.
 
 ## Troubleshooting
 

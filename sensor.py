@@ -98,53 +98,43 @@ def _parse_response(data):
     }
 
 
-def _find_usb_hub_port():
-    """Find the uhubctl hub location and port for the Omron sensor."""
-    import subprocess
-    try:
-        out = subprocess.check_output(
-            ['uhubctl'], stderr=subprocess.STDOUT, text=True,
-        )
-    except Exception:
-        return None, None
-
-    # Parse uhubctl output to find the port with our VID:PID
-    hub = None
-    for line in out.splitlines():
-        if line.startswith('Current status for hub'):
-            # e.g. "Current status for hub 1-1 [2109:3431 ..."
-            hub = line.split('hub')[1].split('[')[0].strip()
-        elif f'{USB_VID}:{USB_PID}' in line.lower():
-            # e.g. "  Port 1: 0103 power enable connect [0590:00d4 ..."
-            port = line.strip().split(':')[0].replace('Port ', '')
-            return hub, port
-    return None, None
+def _find_usb_controller():
+    """Find the PCI address of the xHCI USB controller."""
+    for devdir in glob.glob('/sys/bus/pci/drivers/xhci_hcd/????:??:??.?'):
+        return os.path.basename(devdir)
+    return None
 
 
 def _usb_reset():
-    """Power-cycle the sensor using uhubctl (cuts USB power)."""
+    """Reset the sensor by unbinding/rebinding the xHCI PCI controller.
+
+    uhubctl cannot cut VBUS on the Pi 4's VIA Labs hub, so we reset
+    at the PCI level instead — unbind xhci_hcd, rescan PCI bus, rebind.
+    This fully power-cycles all USB ports and resets the sensor MCU.
+    """
     import subprocess
 
-    hub, port = _find_usb_hub_port()
-    if not hub or not port:
-        logger.error("Cannot find sensor USB hub/port for power cycle")
+    pci_addr = _find_usb_controller()
+    if not pci_addr:
+        logger.error("Cannot find xHCI PCI controller for USB reset")
         return False
 
-    logger.warning("Power-cycling USB hub %s port %s", hub, port)
+    logger.warning("Resetting USB via PCI unbind/rebind of %s", pci_addr)
     try:
-        # Power off
-        subprocess.run(
-            ['uhubctl', '-l', hub, '-p', port, '-a', 'off'],
-            check=True, capture_output=True, text=True,
-        )
+        # Unbind xHCI controller — kills all USB devices
+        with open('/sys/bus/pci/drivers/xhci_hcd/unbind', 'w') as f:
+            f.write(pci_addr)
         time.sleep(3)
 
-        # Power on
-        subprocess.run(
-            ['uhubctl', '-l', hub, '-p', port, '-a', 'on'],
-            check=True, capture_output=True, text=True,
-        )
+        # Rescan PCI bus — re-enumerates the controller
+        with open('/sys/bus/pci/rescan', 'w') as f:
+            f.write('1')
         time.sleep(3)
+
+        # Rebind xHCI controller
+        with open('/sys/bus/pci/drivers/xhci_hcd/bind', 'w') as f:
+            f.write(pci_addr)
+        time.sleep(5)
 
         # Re-register ftdi_sio driver
         subprocess.run(['modprobe', 'ftdi_sio'], capture_output=True)
@@ -158,13 +148,13 @@ def _usb_reset():
         for _ in range(10):
             time.sleep(1)
             if glob.glob('/dev/ttyUSB*'):
-                logger.info("USB power cycle complete, device ready")
+                logger.info("USB reset complete, device ready")
                 return True
 
-        logger.error("Device did not reappear after power cycle")
+        logger.error("Device did not reappear after USB reset")
         return False
     except Exception:
-        logger.exception("USB power cycle failed")
+        logger.exception("USB reset failed")
         return False
 
 
@@ -217,6 +207,14 @@ class Sensor:
                 if _usb_reset():
                     try:
                         self._open_serial()
+                        # Discard first few reads — sensor needs warm-up
+                        for _ in range(3):
+                            time.sleep(1)
+                            self._serial.reset_input_buffer()
+                            self._serial.write(_build_read_command())
+                            time.sleep(0.15)
+                            self._serial.read(self._serial.in_waiting or 64)
+                        logger.info("Warm-up reads discarded, sensor ready")
                     except Exception:
                         logger.exception("Failed to reopen serial after USB reset")
                 self._stale_count = 0
