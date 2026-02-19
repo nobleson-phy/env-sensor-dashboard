@@ -98,45 +98,73 @@ def _parse_response(data):
     }
 
 
-def _find_usb_device_path():
-    """Find the sysfs path for the Omron sensor (e.g. '1-1.1')."""
-    for devdir in glob.glob('/sys/bus/usb/devices/*/'):
-        try:
-            vid = open(os.path.join(devdir, 'idVendor')).read().strip()
-            pid = open(os.path.join(devdir, 'idProduct')).read().strip()
-            if vid == USB_VID and pid == USB_PID:
-                return os.path.basename(devdir.rstrip('/'))
-        except OSError:
-            pass
-    return None
+def _find_usb_hub_port():
+    """Find the uhubctl hub location and port for the Omron sensor."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ['uhubctl'], stderr=subprocess.STDOUT, text=True,
+        )
+    except Exception:
+        return None, None
+
+    # Parse uhubctl output to find the port with our VID:PID
+    hub = None
+    for line in out.splitlines():
+        if line.startswith('Current status for hub'):
+            # e.g. "Current status for hub 1-1 [2109:3431 ..."
+            hub = line.split('hub')[1].split('[')[0].strip()
+        elif f'{USB_VID}:{USB_PID}' in line.lower():
+            # e.g. "  Port 1: 0103 power enable connect [0590:00d4 ..."
+            port = line.strip().split(':')[0].replace('Port ', '')
+            return hub, port
+    return None, None
 
 
 def _usb_reset():
-    """Power-cycle the sensor by unbinding and rebinding its USB port."""
-    devpath = _find_usb_device_path()
-    if not devpath:
-        logger.error("Cannot find sensor USB device for reset")
+    """Power-cycle the sensor using uhubctl (cuts USB power)."""
+    import subprocess
+
+    hub, port = _find_usb_hub_port()
+    if not hub or not port:
+        logger.error("Cannot find sensor USB hub/port for power cycle")
         return False
 
-    logger.warning("Resetting USB device %s", devpath)
+    logger.warning("Power-cycling USB hub %s port %s", hub, port)
     try:
-        with open('/sys/bus/usb/drivers/usb/unbind', 'w') as f:
-            f.write(devpath)
+        # Power off
+        subprocess.run(
+            ['uhubctl', '-l', hub, '-p', port, '-a', 'off'],
+            check=True, capture_output=True, text=True,
+        )
         time.sleep(3)
-        with open('/sys/bus/usb/drivers/usb/bind', 'w') as f:
-            f.write(devpath)
-        time.sleep(2)
-        # Re-register ftdi_sio for the device
+
+        # Power on
+        subprocess.run(
+            ['uhubctl', '-l', hub, '-p', port, '-a', 'on'],
+            check=True, capture_output=True, text=True,
+        )
+        time.sleep(3)
+
+        # Re-register ftdi_sio driver
+        subprocess.run(['modprobe', 'ftdi_sio'], capture_output=True)
         try:
             with open('/sys/bus/usb-serial/drivers/ftdi_sio/new_id', 'w') as f:
                 f.write(f'{USB_VID} {USB_PID}')
         except OSError:
             pass  # already registered
-        time.sleep(1)
-        logger.info("USB reset complete")
-        return True
+
+        # Wait for /dev/ttyUSB* to appear
+        for _ in range(10):
+            time.sleep(1)
+            if glob.glob('/dev/ttyUSB*'):
+                logger.info("USB power cycle complete, device ready")
+                return True
+
+        logger.error("Device did not reappear after power cycle")
+        return False
     except Exception:
-        logger.exception("USB reset failed")
+        logger.exception("USB power cycle failed")
         return False
 
 
